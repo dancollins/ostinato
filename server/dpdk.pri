@@ -22,7 +22,7 @@ INCLUDEPATH += "$${RTE_SDK}/$${RTE_TARGET}/include"
 
 # CPPFLAGS reqd by DPDK
 # TODO: derive these from RTE_SDK/RTE_TARGET
-QMAKE_CXXFLAGS += -m32 \
+QMAKE_CXXFLAGS +=  \
                   -pthread \
                   -march=native
 QMAKE_CXXFLAGS += -D__STDC_LIMIT_MACROS 
