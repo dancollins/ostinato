@@ -68,7 +68,7 @@ DpdkPort::DpdkPort(int id, const char *device, struct rte_mempool *mbufPool)
 
     ret = rte_eth_tx_queue_setup(dpdkPortId_,
                                  0,  // queue #
-                                 32, // # of descriptors in ring
+                                 512, // # of descriptors in ring. FIXME: This should be user-configurable
                                  rte_eth_dev_socket_id(dpdkPortId_),
                                  &txConf_);
     if (ret < 0) {
@@ -78,7 +78,7 @@ DpdkPort::DpdkPort(int id, const char *device, struct rte_mempool *mbufPool)
 
     ret = rte_eth_rx_queue_setup(dpdkPortId_, 
                                  0,  // queue #
-                                 32, // # of descriptors in ring
+                                 128, // # of descriptors in ring. FIXME: This should be user-configurable
                                  rte_eth_dev_socket_id(dpdkPortId_),
                                  &rxConf_,
                                  mbufPool_);
