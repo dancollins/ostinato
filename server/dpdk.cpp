@@ -87,8 +87,8 @@ int initDpdk(char* progname)
         rte_panic("Cannot init EAL\n");
 
     mbufPool_ = rte_mempool_create("DpktPktMbuf",
-                                      16*1024, // # of mbufs
-                                      2048, // sz of mbuf
+                                      8*1024, // # of mbufs
+                                      2048 + RTE_PKTMBUF_HEADROOM, // sz of mbuf
                                       32,   // per-lcore cache sz
                                       sizeof(struct rte_pktmbuf_pool_private),
                                       rte_pktmbuf_pool_init, // pool ctor
