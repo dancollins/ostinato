@@ -467,8 +467,7 @@ int DpdkPort::syncTransmit(void *arg)
     TxInfo *txInfo = (TxInfo*)arg;
     DpdkPacket *packets = txInfo->list->packets;
     DpdkPacketSet *packetSet = txInfo->list->packetSet;
-    quint64 loopDelay = txInfo->list->loop ? 
-        txInfo->list->loopDelaySec*1E6 + txInfo->list->loopDelayNsec/1E3 : 0;
+    quint64 loopDelay = txInfo->list->loopDelaySec*1E6 + txInfo->list->loopDelayNsec/1E3;
     quint64 lastSec = 0, lastNsec = 0;
     quint64 n = packetSet->loopCount;
     uint i = 0;
@@ -520,10 +519,10 @@ int DpdkPort::syncTransmit(void *arg)
             i = 0;
             packetSet = txInfo->list->packetSet;
             n = packetSet->loopCount;
+            if(!txInfo->list->loop)
+                break;
             if (loopDelay)
                 rte_delay_us(loopDelay);
-            else
-                break;
         }
     }
 
