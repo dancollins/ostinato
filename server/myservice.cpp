@@ -51,8 +51,10 @@ MyService::MyService()
 
 MyService::~MyService()
 {
-    while (!portLock.isEmpty())
+    portInfo.clear(); /* Port manager will do the port deletion */
+    while (!portLock.isEmpty()) {
         delete portLock.takeFirst();
+    }
     //! \todo Use a singleton destroyer instead 
     // http://www.research.ibm.com/designpatterns/pubs/ph-jun96.txt
     delete PortManager::instance();
@@ -479,7 +481,7 @@ void MyService::getStats(::google::protobuf::RpcController* /*controller*/,
         s = response->add_port_stats();
         s->mutable_port_id()->set_id(request->port_id(i).id());
 
-        st = s->mutable_state(); 
+        st = s->mutable_state();
         portLock[portId]->lockForRead();
         st->set_link_state(portInfo[portId]->linkState()); 
         st->set_is_transmit_on(portInfo[portId]->isTransmitOn()); 
