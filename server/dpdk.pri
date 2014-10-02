@@ -34,7 +34,7 @@ QMAKE_CXXFLAGS += -DRTE_MACHINE_CPUFLAG_SSE \
 QMAKE_CXXFLAGS += -include $${RTE_SDK}/$${RTE_TARGET}/include/rte_config.h
 
 # lib location
-LIBS += -L"$${RTE_SDK}/$${RTE_TARGET}/lib"
+LIBS += -L"$${RTE_SDK}/$${RTE_TARGET}/lib" -Wl,--whole-archive
 
 # PMD libs to link
 LIBS += -lrte_pmd_e1000 \
@@ -49,3 +49,6 @@ LIBS += -lrte_malloc \
         -lrte_mbuf \
         -lrte_ring \
         -lrte_eal
+
+# Turn off --whole-archive
+LIBS += -Wl,--no-whole-archive
