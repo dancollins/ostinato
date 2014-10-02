@@ -178,7 +178,7 @@ bool DpdkPort::hasExclusiveControl()
     return false;
 }
 
-bool DpdkPort::setExclusiveControl(bool exclusive)
+bool DpdkPort::setExclusiveControl(bool /*exclusive*/)
 {
     return false;
 }
@@ -249,7 +249,6 @@ bool DpdkPort::appendToPacketList(long sec, long nsec, const uchar *packet,
                                 int length)
 {
     struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mbufPool_);
-    struct rte_mbuf *mbuf2;
     int len;
     char *pktData;
 
