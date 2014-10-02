@@ -47,7 +47,7 @@ int getFreeLcore()
 
 int pkts = 0;
 
-int pollRxRings(void *arg)
+int pollRxRings(void * /*arg*/)
 {
     int i, count = rte_eth_dev_count();
     struct rte_mbuf* rxPkts[32];
