@@ -154,7 +154,7 @@ void DpdkPort::initRxQueueConfig(const struct rte_pci_id *pciId)
 
 void DpdkPort::initTxQueueConfig(const struct rte_pci_id *pciId)
 {
-    memset(&txConf_, 0, sizeof(rxConf_));
+    memset(&txConf_, 0, sizeof(txConf_));
 
     switch (pciId->device_id) {
 #if 0
@@ -168,6 +168,7 @@ void DpdkPort::initTxQueueConfig(const struct rte_pci_id *pciId)
         break;
 #endif
     default:
+        txConf_.tx_thresh.pthresh = 32;
         break;
     }
 }
