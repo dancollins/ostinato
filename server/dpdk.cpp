@@ -102,9 +102,6 @@ int initDpdk(char* progname)
     if (!mbufPool_)
         rte_exit(EXIT_FAILURE, "cannot init mbuf pool\n");
 
-    if (rte_pmd_init_all() < 0)
-        rte_exit(EXIT_FAILURE, "cannot init pmd\n");
-
     if (rte_eal_pci_probe() < 0)
         rte_exit(EXIT_FAILURE, "cannot probe PCI\n");
 
