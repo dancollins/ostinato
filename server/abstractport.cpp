@@ -324,7 +324,6 @@ void AbstractPort::updatePacketListSequential()
 
             for (uint j = 0; j < (x+y); j++)
             {
-                
                 if (j == 0 || frameVariableCount > 1)
                 {
                     len = streamList_[i]->frameValue(
