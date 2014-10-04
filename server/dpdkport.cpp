@@ -169,6 +169,7 @@ void DpdkPort::initTxQueueConfig(const struct rte_pci_id *pciId)
 #endif
     default:
         txConf_.tx_thresh.pthresh = 32;
+        txConf_.tx_free_thresh = 32;
         break;
     }
 }
