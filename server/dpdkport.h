@@ -27,6 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>
 #include <rte_ethdev.h>
 
 #define DBG_MBUF_POOL
+/* This number is tied to the number of descriptors in a ring
+   supplied to rte_eth_tx_queue_setup. It has to be slightly lower though.
+   e.g. with 512 descriptors, I had to set this number to 480 to avoid dropping
+   packets.
+   It isn't exactly clear to me what's going on, but as far as I can see,
+   number of packets which don't fit into TX queue is related to the number
+   of available HW descriptors.
+*/
+#define MAX_PKT_BURST 900
 
 class DpdkPort: public AbstractPort
 {

@@ -68,7 +68,7 @@ DpdkPort::DpdkPort(int id, const char *device, struct rte_mempool *mbufPool)
 
     ret = rte_eth_tx_queue_setup(dpdkPortId_,
                                  0,  // queue #
-                                 512, // # of descriptors in ring. FIXME: This should be user-configurable
+                                 1024, // # of descriptors in ring. FIXME: This should be user-configurable
                                  rte_eth_dev_socket_id(dpdkPortId_),
                                  &txConf_);
     if (ret < 0) {
@@ -471,6 +471,14 @@ int DpdkPort::syncTransmit(void *arg)
     quint64 lastSec = 0, lastNsec = 0;
     quint64 n = packetSet->loopCount;
     uint i = 0;
+    /*
+      We'll fill this up with sequential packets, untill we either run to the
+      end of the sequence, or to the first packet with a non-zero delay, and pass
+      it to the TX burst function
+    */
+    const int max_burst = (txInfo->list->size > MAX_PKT_BURST)?MAX_PKT_BURST:txInfo->list->size;
+    struct rte_mbuf* pkt_burst[max_burst];
+    int burst_idx = 0;
 
     qDebug("%s: list sz = %llu", __FUNCTION__, txInfo->list->size);
     qDebug("%s: set = (%llu-%llu)x%llu delay = %llu", __FUNCTION__, 
@@ -494,7 +502,14 @@ int DpdkPort::syncTransmit(void *arg)
         // increment refcnt so that mbuf is not free'd after tx
         rte_mbuf_refcnt_update(mbuf, 1);
         //qDebug("refcnt = %u", rte_mbuf_refcnt_read(mbuf));
-        rte_eth_tx_burst(txInfo->portId, 0, &mbuf, 1);
+        //rte_eth_tx_burst(txInfo->portId, 0, &mbuf, 1);
+        pkt_burst[burst_idx++]=mbuf;
+        if(sec || usec || i == packetSet->endOfs || i >= txInfo->list->size || burst_idx >= max_burst) {
+            int nb_tx = rte_eth_tx_burst(txInfo->portId, 0, pkt_burst, burst_idx);
+            if(nb_tx < burst_idx)
+                qDebug("Tried to transfer %d packets, but only transfered %d", burst_idx, nb_tx);
+            burst_idx = 0;
+        }
 
         if (i == packetSet->endOfs) {
             if (packetSet->repeatDelayUsec)
