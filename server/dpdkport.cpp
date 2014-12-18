@@ -309,6 +309,10 @@ void DpdkPort::startTransmit()
     state = rte_eal_get_lcore_state(transmitLcoreId_);
 
     Q_ASSERT(state != RUNNING);
+	/* If assertions are disabled, we need to handle the error. In this case,
+	 * if the port is already running, we don't need to start it again. */
+	if (state == RUNNING)
+		return;
 
     if (state == FINISHED)
         rte_eal_wait_lcore(transmitLcoreId_);
@@ -505,10 +509,18 @@ int DpdkPort::syncTransmit(void *arg)
         //qDebug("refcnt = %u", rte_mbuf_refcnt_read(mbuf));
         //rte_eth_tx_burst(txInfo->portId, 0, &mbuf, 1);
         pkt_burst[burst_idx++]=mbuf;
-        if(sec || usec || i == packetSet->endOfs || i >= txInfo->list->size || burst_idx >= max_burst) {
-            int nb_tx = rte_eth_tx_burst(txInfo->portId, 0, pkt_burst, burst_idx);
-            if(nb_tx < burst_idx)
-                qDebug("Tried to transfer %d packets, but only transfered %d", burst_idx, nb_tx);
+        if(sec || usec || i == packetSet->endOfs || i >= txInfo->list->size ||
+		   burst_idx >= max_burst) {
+			int nb_tx = 0;
+
+			/* Keep trying until we've sent the packet. This lets us send
+			 * an accurate number of packets at line rate. */
+			do {
+				nb_tx += rte_eth_tx_burst(txInfo->portId, 0, &pkt_burst[nb_tx],
+										  burst_idx);
+				burst_idx -= nb_tx;
+			} while(burst_idx > 0);
+
             burst_idx = 0;
         }
 

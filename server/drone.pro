@@ -24,6 +24,7 @@ win32 {
     LIBS += -lpcap
     LIBS += -L"../common" -lostproto
     LIBS += -L"../rpc" -lpbrpc
+    LIBS += -ldl
     POST_TARGETDEPS += "../common/libostproto.a" "../rpc/libpbrpc.a"
 }
 unix: include(dpdk.pri)
