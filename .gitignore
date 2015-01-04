@@ -1,0 +1,29 @@
+# Built files
+*.o
+*.a
+*.so
+*.pyc
+*.app
+
+# Qt generated files
+ui_*.h
+moc_*.cpp
+qrc_*.cpp
+
+# Backup files
+*~
+
+# Binary files
+drone
+ostinato
+
+# QMake generated files
+Makefile*
+*\object_script.*
+
+# protobuf generated files
+version.cpp
+pkg_info.json
+
+# ctags
+tags
