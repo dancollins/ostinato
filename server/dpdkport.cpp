@@ -467,49 +467,71 @@ void DpdkPort::StatsMonitor::run()
     linkState.clear();
 }
 
-int DpdkPort::syncTransmit(void *arg)
-{
-    TxInfo *txInfo = (TxInfo*)arg;
-    DpdkPacket *packets = txInfo->list->packets;
+int DpdkPort::syncTransmit(void *arg) {
+	TxInfo *txInfo = (TxInfo*)arg;
+	DpdkPacket *packets = txInfo->list->packets;
     DpdkPacketSet *packetSet = txInfo->list->packetSet;
-    quint64 loopDelay = txInfo->list->loopDelaySec*1E6 + txInfo->list->loopDelayNsec/1E3;
-    quint64 lastSec = 0, lastNsec = 0;
-    quint64 n = packetSet->loopCount;
-    uint i = 0;
-    /*
-      We'll fill this up with sequential packets, untill we either run to the
-      end of the sequence, or to the first packet with a non-zero delay, and pass
-      it to the TX burst function
-    */
-    const int max_burst = (txInfo->list->size > MAX_PKT_BURST)?MAX_PKT_BURST:txInfo->list->size;
-    struct rte_mbuf* pkt_burst[max_burst];
-    int burst_idx = 0;
 
-    qDebug("%s: list sz = %llu", __FUNCTION__, txInfo->list->size);
-    qDebug("%s: set = (%llu-%llu)x%llu delay = %llu", __FUNCTION__, 
-            packetSet->startOfs, packetSet->endOfs, 
-            n, packetSet->repeatDelayUsec);
+	int ret = 0;
 
-    while (!txInfo->stopTx) {
-        quint64 sec = packets[i].tsSec;
-        quint64 nsec = packets[i].tsNsec;
-        struct rte_mbuf *mbuf = packets[i].mbuf;
-        quint64 usec = (sec - lastSec)*1e6 + (nsec - lastNsec)/1E3;
+	/* Create memory to store either all of the packets, or the maximum
+	 * burst size */
+	const int max_burst = txInfo->list->size > MAX_PKT_BURST ?
+		MAX_PKT_BURST : txInfo->list->size;
+	struct rte_mbuf *pkt_burst[max_burst];
+	int burst_idx = 0;
 
-#if 0
-        qDebug("%s: %u, sec/nsec= %llu/%llu => usecs = %llu", __FUNCTION__, 
-                i, sec, nsec, usec);
-#endif
-        // TODO: define and use rte_delay_nsec()
-        if (usec)
-            rte_delay_us(usec);
+	/* Calculate the average size and rate for the packets so we can rate
+	 * limit them */
+	quint64 n = txInfo->list->size, i;
+	quint64 avg_size = packets->mbuf->buf_len;
+	quint64 avg_delay = 0;
+	quint64 mbits = 0;
+	DpdkPacket *p, *old_p;
+	qDebug("%s: Averaging %llu packets for size and rate", __func__,
+		   txInfo->list->size);
+	for (i = 1; i < n; i++) {
+		p = &packets[i];
+		old_p = &packets[i-1];
 
-        // increment refcnt so that mbuf is not free'd after tx
-        rte_mbuf_refcnt_update(mbuf, 1);
-        //qDebug("refcnt = %u", rte_mbuf_refcnt_read(mbuf));
-        //rte_eth_tx_burst(txInfo->portId, 0, &mbuf, 1);
-        pkt_burst[burst_idx++]=mbuf;
-        if(sec || usec || i == packetSet->endOfs || i >= txInfo->list->size ||
+		/* Need to add FCS, but not preamble */
+		avg_size += rte_pktmbuf_pkt_len(p->mbuf) + 4;
+		avg_size /= 2;
+
+		avg_delay += ((p->tsSec * 1E9) + p->tsNsec) -
+			((old_p->tsSec * 1E9) + old_p->tsNsec);
+		/* Ensure we start the rolling average on the second iteration of
+		 * this loop */
+		if (i > 1)
+			avg_delay /= 2;
+	}
+
+	/* Calculate Mbits
+	 * bits/s = (8 * avg_size) / (avg_delay * 1E-9)
+     * Mbits/s = bits/s / 1E6
+     *         = [(8 * avg_size) / (avg_delay * 1E-9)] * 1/1E6
+	 *         = (8 * avg_size) / (avg_delay * 1E-3)
+	 */
+	mbits = (8 * avg_size) / (avg_delay * 1E-3);
+
+	qDebug("%s: Avg size: %llu Avg delay: %llu Mbits/s: %llu", __func__,
+		   avg_size, avg_delay, mbits);
+
+	/* Rate limit the connection */
+	ret = rte_eth_set_queue_rate_limit(txInfo->portId, 0, mbits);
+	qDebug("%s: queue rate ret: %d", __func__, ret);
+
+	/* Send the data */
+	i = 0;
+	while (!txInfo->stopTx) {
+		struct rte_mbuf *mbuf = packets[i].mbuf;
+
+		/* Increment refcnt so that mbuf is not freed after tx */
+		rte_mbuf_refcnt_update(mbuf, 1);
+
+		pkt_burst[burst_idx++] = mbuf;
+
+		if (i == packetSet->endOfs || i >= txInfo->list->size ||
 		   burst_idx >= max_burst) {
 			int nb_tx = 0;
 
@@ -524,39 +546,31 @@ int DpdkPort::syncTransmit(void *arg)
             burst_idx = 0;
         }
 
-        if (i == packetSet->endOfs) {
-            if (packetSet->repeatDelayUsec)
-                rte_delay_us(packetSet->repeatDelayUsec);
+		if (i == packetSet->endOfs) {
             n--;
             if (n > 0) {
                 i = packetSet->startOfs;
-                lastSec = packets[i].tsSec;
-                lastNsec = packets[i].tsNsec;
                 continue;
-            }
-            else {
+            } else {
                 packetSet++;
                 n = packetSet->loopCount;
             }
         }
 
-        lastSec = sec;
-        lastNsec = nsec;
+		if (++i >= txInfo->list->size) {
+			i = 0;
 
-        if (++i >= txInfo->list->size) {
-            i = 0;
-            packetSet = txInfo->list->packetSet;
-            n = packetSet->loopCount;
-            if(!txInfo->list->loop)
-                break;
-            if (loopDelay)
-                rte_delay_us(loopDelay);
-        }
-    }
+			packetSet = txInfo->list->packetSet;
+			n = packetSet->loopCount;
 
-    qDebug("finished syncTransmit");
+			if (!txInfo->list->loop)
+				break;
+		}
+	}
 
-    return 0;
+	qDebug("%s: Finished syncTransmit", __func__);
+
+	return 0;
 }
 
 int DpdkPort::topSpeedTransmit(void *arg)

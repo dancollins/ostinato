@@ -4,6 +4,7 @@
 *.a
 *.dll
 *.so
+*.so*
 *.exe
 *.app
 drone
