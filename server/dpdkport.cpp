@@ -467,30 +467,69 @@ void DpdkPort::StatsMonitor::run()
     linkState.clear();
 }
 
+/**
+ * Used to ge the next packet in the sequence.
+ *
+ * Passing a packet list will reset the internal state. Subsequent calls
+ * should pass NULL.
+ *
+ * @param list: PacketList describing loop behaviour and holding packets
+ * @return The next packet in the sequence. If there are no more packets,
+ *         this will return null.
+ */
+DpdkPort::DpdkPacket *DpdkPort::get_next_packet
+(DpdkPort::DpdkPacketList *packet_list) {
+	static quint64 pkt_i, loop_i;
+	static DpdkPacketList *list;
+
+	DpdkPacket *packet;
+
+	/* If packet list is specified, reset the static variables */
+	if (packet_list) {
+		list = packet_list;
+		pkt_i = 0;
+		loop_i = list->packetSet->loopCount;
+	}
+
+	/* If we've returned all of the packets, we're done */
+	if (pkt_i == list->size)
+		return NULL;
+
+	/* Get the next packet */
+	packet = &(list->packets[pkt_i++]);
+
+	/* Handle the loop counter */
+	if (pkt_i > list->packetSet->endOfs) {
+		if (loop_i > 1) {
+			loop_i--;
+			pkt_i = list->packetSet->startOfs;
+		}
+	}
+
+	return packet;
+}
+
 int DpdkPort::syncTransmit(void *arg) {
 	TxInfo *txInfo = (TxInfo*)arg;
 	DpdkPacket *packets = txInfo->list->packets;
-    DpdkPacketSet *packetSet = txInfo->list->packetSet;
 
-	int ret = 0;
+	int ret;
+	quint64 i;
 
 	/* Create memory to store either all of the packets, or the maximum
 	 * burst size */
-	const int max_burst = txInfo->list->size > MAX_PKT_BURST ?
-		MAX_PKT_BURST : txInfo->list->size;
-	struct rte_mbuf *pkt_burst[max_burst];
+	struct rte_mbuf *pkt_burst[MAX_PKT_BURST];
 	int burst_idx = 0;
 
 	/* Calculate the average size and rate for the packets so we can rate
 	 * limit them */
-	quint64 n = txInfo->list->size, i;
 	quint64 avg_size = packets->mbuf->buf_len;
 	quint64 avg_delay = 0;
 	quint64 mbits = 0;
 	DpdkPacket *p, *old_p;
 	qDebug("%s: Averaging %llu packets for size and rate", __func__,
 		   txInfo->list->size);
-	for (i = 1; i < n; i++) {
+	for (i = 1; i < txInfo->list->size; i++) {
 		p = &packets[i];
 		old_p = &packets[i-1];
 
@@ -518,56 +557,50 @@ int DpdkPort::syncTransmit(void *arg) {
 		   avg_size, avg_delay, mbits);
 
 	/* Rate limit the connection */
+	/* TODO: Handle error case */
 	ret = rte_eth_set_queue_rate_limit(txInfo->portId, 0, mbits);
 	qDebug("%s: queue rate ret: %d", __func__, ret);
 
+	qDebug("%s: sof: %llu eof: %llu loopCount: %llu size: %llu", __func__,
+		   txInfo->list->packetSet->startOfs,
+		   txInfo->list->packetSet->endOfs,
+		   txInfo->list->packetSet->loopCount,
+		   txInfo->list->size);
+
 	/* Send the data */
-	i = 0;
+	p = get_next_packet(txInfo->list);
 	while (!txInfo->stopTx) {
-		struct rte_mbuf *mbuf = packets[i].mbuf;
+		/* Fill the burst buffer as much as possible */
+		burst_idx = 0;
+		while (burst_idx <= MAX_PKT_BURST) {
+			/* Tell DPDK not to free this after sending it, as we need it */
+			rte_mbuf_refcnt_update(p->mbuf, 1);
 
-		/* Increment refcnt so that mbuf is not freed after tx */
-		rte_mbuf_refcnt_update(mbuf, 1);
+			pkt_burst[burst_idx++] = p->mbuf;
+			p = get_next_packet(NULL);
 
-		pkt_burst[burst_idx++] = mbuf;
+			/* Early exit if we run out of packets */
+			if (p == NULL)
+				break;
+		}
 
-		if (i == packetSet->endOfs || i >= txInfo->list->size ||
-		   burst_idx >= max_burst) {
-			int nb_tx = 0;
+		/* Send the burst of packets */
+		int nb_tx = 0;
+		while (burst_idx-nb_tx > 0) {
+			nb_tx += rte_eth_tx_burst(txInfo->portId, 0, &pkt_burst[nb_tx],
+									  burst_idx-nb_tx);
+		}
 
-			/* Keep trying until we've sent the packet. This lets us send
-			 * an accurate number of packets at line rate. */
-			do {
-				nb_tx += rte_eth_tx_burst(txInfo->portId, 0, &pkt_burst[nb_tx],
-										  burst_idx);
-				burst_idx -= nb_tx;
-			} while(burst_idx > 0);
-
-            burst_idx = 0;
-        }
-
-		if (i == packetSet->endOfs) {
-            n--;
-            if (n > 0) {
-                i = packetSet->startOfs;
-                continue;
-            } else {
-                packetSet++;
-                n = packetSet->loopCount;
-            }
-        }
-
-		if (++i >= txInfo->list->size) {
-			i = 0;
-
-			packetSet = txInfo->list->packetSet;
-			n = packetSet->loopCount;
-
+		/* Decide if we need to exit or restart the packet getter */
+		if (p == NULL) {
 			if (!txInfo->list->loop)
 				break;
+
+			p = get_next_packet(txInfo->list);
 		}
 	}
 
+	qDebug("%s: sent %llu packets", __func__, sent);
 	qDebug("%s: Finished syncTransmit", __func__);
 
 	return 0;

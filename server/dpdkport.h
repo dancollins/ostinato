@@ -155,6 +155,8 @@ private:
         }
     } TxInfo;
 
+	static DpdkPacket *get_next_packet(DpdkPacketList *packet_list);
+
     int dpdkPortId_;
     struct rte_mempool *mbufPool_;
     struct rte_eth_rxconf rxConf_;
